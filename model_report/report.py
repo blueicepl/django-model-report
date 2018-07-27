@@ -5,7 +5,7 @@ from itertools import groupby
 
 import django
 from django.http import HttpResponse
-from django.shortcuts import render_to_response
+from django.shortcuts import render
 from django.template import RequestContext
 from django.utils.translation import ugettext_lazy as _
 from django.db.models.fields import DateTimeField, DateField
@@ -21,7 +21,6 @@ from django.db.models import ForeignKey
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.forms import MultipleChoiceField
-from django.forms.widgets import SelectMultiple
 
 from model_report.exporters.excel import ExcelExporter
 from model_report.exporters.pdf import PdfExporter
@@ -51,10 +50,10 @@ def autodiscover(module_name='reports.py'):
     for app in settings.INSTALLED_APPS:
         mod = import_module(app)
         # Attempt to import the app's admin module.
+        before_import_registry = copy.copy(reports)
         try:
-            before_import_registry = copy.copy(reports)
             import_module('%s.%s' % (app, module_name))
-        except:
+        except ImportError:
             # Reset the model registry to the state before the last import as
             # this import will have to reoccur on the next request and this
             # could raise NotRegistered and AlreadyRegistered exceptions
@@ -243,24 +242,29 @@ class ReportAdmin(object):
                     base_model = self.model
                     for field_lookup in field.split("__"):
                         if not pre_field:
-                            pre_field, _, _, is_m2m = base_model._meta.get_field_by_name(field_lookup)
+                            # pre_field, _, _, is_m2m = base_model._meta.get_field_by_name(field_lookup)
+                            pre_field = base_model._meta.get_field(field_lookup)
+                            is_m2m = pre_field.many_to_many
                             if is_m2m:
                                 m2mfields.append(pre_field)
                         elif isinstance(pre_field, ForeignObjectRel):
                             base_model = pre_field.model
-                            pre_field = base_model._meta.get_field_by_name(field_lookup)[0]
+                            # pre_field = base_model._meta.get_field_by_name(field_lookup)[0]
+                            pre_field = base_model._meta.get_field(field_lookup)
                         else:
                             if is_date_field(pre_field):
                                 pre_field = pre_field
                             else:
                                 base_model = pre_field.rel.to
-                                pre_field = base_model._meta.get_field_by_name(field_lookup)[0]
+                                # pre_field = base_model._meta.get_field_by_name(field_lookup)[0]
+                                pre_field = base_model._meta.get_field(field_lookup)
                     model_field = pre_field
                 else:
                     if field in self.extra_fields:
                         model_field = self.extra_fields[field]
                     elif not 'self.' in field:
-                        model_field = self.model._meta.get_field_by_name(field)[0]
+                        # model_field = self.model._meta.get_field_by_name(field)[0]
+                        model_field = self.model._meta.get_field(field)
                     else:
                         get_attr = lambda s: getattr(s, field.split(".")[1])
                         get_attr.verbose_name = field
@@ -286,7 +290,6 @@ class ReportAdmin(object):
                                 self.related_inline_filters.append([pattname, cattname, self.parent_report.get_fields().index(pattname)])
                     except Exception, e:
                         pass
-
 
     def _get_grouper_text(self, groupby_field, value):
         try:
@@ -498,15 +501,13 @@ class ReportAdmin(object):
         """ Override this method to another one raising Forbidden
         exceptions if you want to limit the access to the report """
 
-
     def render(self, request, extra_context={}):
         context_or_response = self.get_render_context(request, extra_context)
         self.check_permissions(request)
 
         if isinstance(context_or_response, HttpResponse):
             return context_or_response
-        return render_to_response(self.template_name, context_or_response,
-                                  context_instance=RequestContext(request))
+        return render(request, self.template_name, context_or_response)
 
     def has_report_totals(self):
         return not (not self.report_totals)
@@ -554,8 +555,7 @@ class ReportAdmin(object):
         if widget:
             for field_to_set_widget, widget in widget.iteritems():
                 if field_to_set_widget == field:
-                    return (True, widget, MultipleChoiceField().__class__)
-
+                    return True, widget, MultipleChoiceField().__class__
 
     def get_form_filter(self, request):
         form_fields = fields_for_model(self.model, [f for f in self.get_query_field_names() if f in self.list_filter])
@@ -577,12 +577,14 @@ class ReportAdmin(object):
                                     base_model = pre_field.model
                                 else:
                                     base_model = pre_field.rel.to
-                            pre_field = base_model._meta.get_field_by_name(field_lookup)[0]
+                            # pre_field = base_model._meta.get_field_by_name(field_lookup)[0]
+                            pre_field = base_model._meta.get_field(field_lookup)
 
                         model_field = pre_field
                     else:
                         field_name = k.split("__")[0]
                         model_field = opts.get_field_by_name(field_name)[0]
+                        model_field = opts.get_field(field_name)
 
                     if isinstance(model_field, (DateField, DateTimeField)):
                         form_fields.pop(k)
@@ -631,7 +633,8 @@ class ReportAdmin(object):
                         setattr(field, 'as_boolean', True)
                     elif isinstance(v, (forms.DateField, forms.DateTimeField)):
                         field_name = k.split("__")[0]
-                        model_field = opts.get_field_by_name(field_name)[0]
+                        # model_field = opts.get_field_by_name(field_name)[0]
+                        model_field = opts.get_field(field_name)
                         form_fields.pop(k)
                         field = RangeField(model_field.formfield)
                     else:
