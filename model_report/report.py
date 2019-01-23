@@ -688,7 +688,7 @@ class ReportAdmin(object):
                 new_row = []
                 for index, actual_value in enumerate(old_row):
                     if index in dot_indexes_values:
-                        new_value = dot_indexes_values[index][actual_value]
+                        new_value = dot_indexes_values[index].get(actual_value, '')
                     else:
                         new_value = actual_value
                     new_row.append(new_value)
