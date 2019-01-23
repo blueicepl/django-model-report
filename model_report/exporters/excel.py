@@ -7,6 +7,9 @@ from model_report import arial10
 from .base import Exporter
 
 
+USHRT_MAX = 65535
+
+
 class FitSheetWrapper(object):
     """Try to fit columns to max size of any entry.
     To use, wrap this around a worksheet returned from the
@@ -30,6 +33,10 @@ class FitSheetWrapper(object):
             style = args[0]
             bold = str(style.font.bold) in ('1', 'true', 'True')
         width = int(arial10.fitwidth(label, bold))
+
+        if width > USHRT_MAX:
+            width = USHRT_MAX
+
         if width > self.widths.get(c, 0):
             self.widths[c] = width
             self.sheet.col(c).width = width
